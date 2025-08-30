@@ -20,6 +20,10 @@
 			minimumFractionDigits: 2 
 		});
 	}
+
+	function formatNumber(num: number): string {
+		return num.toString().replace('.', ',');
+	}
 	
 	function getTotalCopiedItems(): number {
 		// Only count description chunks, not financial fields
@@ -56,7 +60,7 @@
 			
 			<div class="text-right">
 				<div class="text-sm font-medium text-muted-foreground">
-					{getTotalCopiedItems()}/{getTotalCopyableItems()} copied
+					{getTotalCopiedItems()}/{getTotalCopyableItems()} copiados
 				</div>
 			</div>
 		</div>
@@ -88,10 +92,10 @@
 							<div class="flex flex-col space-y-1">
 								<span class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cantidad</span>
 								<button
-									onclick={() => onCopyField('quantity', item.quantity!.toString())}
+									onclick={() => onCopyField('quantity', formatNumber(item.quantity!))}
 									class="bg-muted/50 hover:bg-muted px-3 py-2 rounded text-sm font-medium text-center transition-all duration-150 hover:scale-105 active:scale-95 cursor-copy"
 								>
-									{item.quantity}
+									{formatNumber(item.quantity)}
 								</button>
 							</div>
 						{/if}

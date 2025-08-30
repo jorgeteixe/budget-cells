@@ -18,7 +18,7 @@
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-	<title>Budget Cells - Professional Construction PDF Processor</title>
+	<title>Budget Cells - Procesador Profesional de PDFs de Construcción</title>
 </svelte:head>
 
 <div class="min-h-screen bg-background">
@@ -30,10 +30,10 @@
 			</div>
 			<nav class="flex items-center space-x-1">
 				<a href="/" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 px-3">
-					Files
+					Archivos
 				</a>
 				<a href="/settings" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 px-3">
-					Settings
+					Configuración
 				</a>
 			</nav>
 		</div>
