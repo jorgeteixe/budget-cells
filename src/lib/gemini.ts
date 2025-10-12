@@ -157,7 +157,7 @@ async function processChunkWithGemini(
 		model: 'gemini-2.5-flash',
 		generationConfig: {
 			responseMimeType: 'application/json',
-			maxOutputTokens: 8192
+			maxOutputTokens: 65536
 		}
 	});
 
@@ -206,23 +206,27 @@ ${text}
 
 	const result = await model.generateContent(prompt);
 	const response = result.response.text();
-	
+
 	// Extract usage metadata if available
 	const usage = result.response.usageMetadata;
-	
+
 	try {
 		const parsed = JSON.parse(response);
-		return { 
-			items: parsed.items || [], 
+		const items = parsed.items || [];
+		console.log(`Chunk ${chunkIndex + 1} parsed successfully: ${items.length} items extracted`);
+		return {
+			items,
 			usage: usage ? {
 				promptTokens: usage.promptTokenCount || 0,
 				candidatesTokens: usage.candidatesTokenCount || 0,
 				totalTokens: usage.totalTokenCount || 0
-			} : undefined 
+			} : undefined
 		};
 	} catch (error) {
-		console.warn(`Failed to parse chunk ${chunkIndex + 1}:`, error);
-		return { items: [], usage: undefined };
+		console.error(`Failed to parse chunk ${chunkIndex + 1}:`, error);
+		console.error(`Response preview: ${response.substring(0, 500)}...`);
+		console.error(`Response length: ${response.length} characters`);
+		throw new Error(`Chunk ${chunkIndex + 1} parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
 	}
 }
 
@@ -246,17 +250,27 @@ export async function processWithGemini(
 		// Process each chunk sequentially to avoid rate limits
 		for (let i = 0; i < textChunks.length; i++) {
 			onProgress?.(`Processing chunk ${i + 1} of ${textChunks.length}...`);
-			
-			const chunkResult = await processChunkWithGemini(textChunks[i], apiKey, i);
-			allItems = allItems.concat(chunkResult.items);
-			
-			// Track token usage
-			if (chunkResult.usage) {
-				totalInputTokens += chunkResult.usage.promptTokens;
-				totalOutputTokens += chunkResult.usage.candidatesTokens;
-				totalTokens += chunkResult.usage.totalTokens;
+
+			try {
+				const chunkResult = await processChunkWithGemini(textChunks[i], apiKey, i);
+				allItems = allItems.concat(chunkResult.items);
+
+				console.log(`Total items so far: ${allItems.length}`);
+				onProgress?.(`Chunk ${i + 1}/${textChunks.length}: ${chunkResult.items.length} items extracted (total: ${allItems.length})`);
+
+				// Track token usage
+				if (chunkResult.usage) {
+					totalInputTokens += chunkResult.usage.promptTokens;
+					totalOutputTokens += chunkResult.usage.candidatesTokens;
+					totalTokens += chunkResult.usage.totalTokens;
+				}
+			} catch (error) {
+				const errorMsg = `Error processing chunk ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+				console.error(errorMsg);
+				onProgress?.(errorMsg);
+				throw error; // Re-throw to stop processing on error
 			}
-			
+
 			// Small delay between requests to avoid rate limiting
 			if (i < textChunks.length - 1) {
 				await new Promise(resolve => setTimeout(resolve, 500));
