@@ -1,6 +1,46 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { BudgetItem, BudgetData, AiUsage } from './types.js';
 
+export interface GeminiModel {
+	name: string;
+	displayName: string;
+	description?: string;
+}
+
+export async function fetchAvailableModels(apiKey: string): Promise<GeminiModel[]> {
+	try {
+		// Use the REST API directly since the SDK doesn't expose listModels in the client
+		const response = await fetch(
+			`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+		);
+
+		if (!response.ok) {
+			throw new Error(`API responded with status ${response.status}`);
+		}
+
+		const data = await response.json();
+
+		// Filter for models that support generateContent (text generation)
+		// and exclude embedding/vision-only models
+		const models = data.models
+			.filter((model: any) =>
+				model.supportedGenerationMethods?.includes('generateContent') &&
+				!model.name.includes('embedding')
+			)
+			.map((model: any) => ({
+				name: model.name.replace('models/', ''),
+				displayName: model.displayName || model.name.replace('models/', ''),
+				description: model.description
+			}))
+			.sort((a: GeminiModel, b: GeminiModel) => a.displayName.localeCompare(b.displayName));
+
+		return models;
+	} catch (error) {
+		console.error('Failed to fetch models from API:', error);
+		throw new Error(`Failed to fetch models: ${error instanceof Error ? error.message : 'Unknown error'}`);
+	}
+}
+
 function chunkDescription(description: string, maxLength: number): string[] {
 	if (description.length <= maxLength) {
 		return [description];
@@ -148,13 +188,14 @@ function isNaturalBreakLine(line: string): boolean {
 }
 
 async function processChunkWithGemini(
-	text: string, 
-	apiKey: string, 
+	text: string,
+	apiKey: string,
+	modelName: string,
 	chunkIndex: number
 ): Promise<{ items: any[], usage?: any }> {
 	const genAI = new GoogleGenerativeAI(apiKey);
 	const model = genAI.getGenerativeModel({
-		model: 'gemini-2.5-flash',
+		model: modelName,
 		generationConfig: {
 			responseMimeType: 'application/json',
 			maxOutputTokens: 65536
@@ -231,8 +272,9 @@ ${text}
 }
 
 export async function processWithGemini(
-	text: string, 
-	apiKey: string, 
+	text: string,
+	apiKey: string,
+	modelName: string,
 	maxChunkLength: number,
 	tokenCostPer1k: number,
 	onProgress?: (status: string) => void
@@ -252,7 +294,7 @@ export async function processWithGemini(
 			onProgress?.(`Processing chunk ${i + 1} of ${textChunks.length}...`);
 
 			try {
-				const chunkResult = await processChunkWithGemini(textChunks[i], apiKey, i);
+				const chunkResult = await processChunkWithGemini(textChunks[i], apiKey, modelName, i);
 				allItems = allItems.concat(chunkResult.items);
 
 				console.log(`Total items so far: ${allItems.length}`);

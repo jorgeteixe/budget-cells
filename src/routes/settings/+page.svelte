@@ -1,25 +1,83 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { settings } from '$lib/stores.js';
 	import { saveSettings } from '$lib/storage.js';
 	import { budgetDB } from '$lib/db.js';
+	import { fetchAvailableModels, type GeminiModel } from '$lib/gemini.js';
 	import Button from '$lib/components/Button.svelte';
-	import { Trash2 } from 'lucide-svelte';
-	
+	import { Trash2, RefreshCw } from 'lucide-svelte';
+
+	// Fallback models list in case API call fails
+	const FALLBACK_MODELS: GeminiModel[] = [
+		{ name: 'gemini-1.5-flash', displayName: 'Gemini 1.5 Flash' },
+		{ name: 'gemini-1.5-flash-8b', displayName: 'Gemini 1.5 Flash-8B' },
+		{ name: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' },
+		{ name: 'gemini-2.0-flash-exp', displayName: 'Gemini 2.0 Flash (Experimental)' }
+	];
+
 	let apiKey = '';
+	let geminiModel = 'gemini-1.5-flash';
 	let maxChunkLength = 256;
 	let tokenCostPer1k = 0.00015;
 	let showSaved = false;
 	let showCleared = false;
-	
+	let availableModels: GeminiModel[] = FALLBACK_MODELS;
+	let loadingModels = false;
+	let modelsError = '';
+
 	settings.subscribe(value => {
 		apiKey = value.geminiApiKey;
+		geminiModel = value.geminiModel;
 		maxChunkLength = value.maxChunkLength;
 		tokenCostPer1k = value.tokenCostPer1k;
 	});
+
+	onMount(() => {
+		// Try to fetch models if API key is available
+		if (apiKey) {
+			loadModels();
+		}
+	});
+
+	// Watch for API key changes and reload models
+	let previousApiKey = apiKey;
+	$: if (apiKey && apiKey !== previousApiKey && apiKey.length > 10) {
+		previousApiKey = apiKey;
+		loadModels();
+	}
+
+	async function loadModels() {
+		if (!apiKey) {
+			modelsError = 'Se requiere clave API para cargar modelos';
+			return;
+		}
+
+		loadingModels = true;
+		modelsError = '';
+
+		try {
+			availableModels = await fetchAvailableModels(apiKey);
+
+			// Ensure current model is in the list, if not, add it
+			if (!availableModels.find(m => m.name === geminiModel)) {
+				availableModels = [
+					...availableModels,
+					{ name: geminiModel, displayName: geminiModel }
+				];
+			}
+		} catch (error) {
+			console.error('Failed to load models:', error);
+			modelsError = error instanceof Error ? error.message : 'Error al cargar modelos';
+			availableModels = FALLBACK_MODELS;
+		} finally {
+			loadingModels = false;
+		}
+	}
 	
 	function handleSave() {
-		const newSettings = { 
-			geminiApiKey: apiKey, 
+		const newSettings = {
+			geminiApiKey: apiKey,
+			geminiModel,
 			maxChunkLength,
 			tokenCostPer1k
 		};
@@ -65,7 +123,47 @@
 					Obtenga su clave API desde <a href="https://makersuite.google.com/app/apikey" target="_blank" class="text-primary hover:text-primary/80">Google AI Studio</a>
 				</p>
 			</div>
-			
+
+			<div>
+				<div class="flex items-center justify-between mb-1">
+					<label for="geminiModel" class="block text-sm font-medium text-foreground">
+						Modelo de Gemini
+					</label>
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={loadModels}
+						disabled={!apiKey || loadingModels}
+						class="h-6 px-2"
+					>
+						<RefreshCw class="w-3 h-3 {loadingModels ? 'animate-spin' : ''}" />
+					</Button>
+				</div>
+				<select
+					id="geminiModel"
+					bind:value={geminiModel}
+					disabled={loadingModels}
+					class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+				>
+					{#each availableModels as model (model.name)}
+						<option value={model.name}>{model.displayName}</option>
+					{/each}
+				</select>
+				{#if loadingModels}
+					<p class="mt-2 text-sm text-blue-600">
+						Cargando modelos disponibles...
+					</p>
+				{:else if modelsError}
+					<p class="mt-2 text-sm text-orange-600">
+						⚠️ {modelsError} - Mostrando modelos predeterminados
+					</p>
+				{:else}
+					<p class="mt-2 text-sm text-muted-foreground">
+						Seleccione el modelo de IA a utilizar para procesar PDFs. Si experimenta errores, intente con un modelo diferente.
+					</p>
+				{/if}
+			</div>
+
 			<div>
 				<label for="maxChunkLength" class="block text-sm font-medium text-foreground">
 					Longitud Máxima de Fragmento

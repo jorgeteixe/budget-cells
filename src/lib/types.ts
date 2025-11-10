@@ -54,6 +54,7 @@ export interface FileWithBudgetData extends StoredFile {
 
 export interface AppSettings {
 	geminiApiKey: string;
+	geminiModel: string;
 	maxChunkLength: number;
 	tokenCostPer1k: number; // Cost per 1000 tokens in EUR
 }

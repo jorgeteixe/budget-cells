@@ -58,7 +58,7 @@
 				processingStatus = status;
 			});
 			
-			const budgetData = await processWithGemini(text, settingsValue.geminiApiKey, settingsValue.maxChunkLength, settingsValue.tokenCostPer1k, (status) => {
+			const budgetData = await processWithGemini(text, settingsValue.geminiApiKey, settingsValue.geminiModel, settingsValue.maxChunkLength, settingsValue.tokenCostPer1k, (status) => {
 				processingStatus = status;
 			});
 			

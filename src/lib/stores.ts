@@ -3,6 +3,7 @@ import type { AppSettings, ProcessingState, StoredFile } from './types.js';
 
 export const settings = writable<AppSettings>({
 	geminiApiKey: '',
+	geminiModel: 'gemini-1.5-flash',
 	maxChunkLength: 256,
 	tokenCostPer1k: 0.00015 // Current Gemini 1.5 Flash pricing: $0.15/1M tokens ≈ 0.00015 EUR/1k tokens
 });
