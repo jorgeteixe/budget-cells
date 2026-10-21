@@ -187,6 +187,52 @@ function isNaturalBreakLine(line: string): boolean {
 	return false;
 }
 
+/**
+ * Safety net: if the model still appends MEDICIONES breakdown tables to a
+ * description, cut them off so they never become copy-paste chunks.
+ */
+export function stripMeasurementDetails(description: string): string {
+	if (!description) return description;
+
+	const normalized = description.replace(/\r\n/g, '\n').trim();
+
+	// Strong signals that a mediciones breakdown table has started.
+	// Capture group 1 is the content to cut from (keeps preceding prose/punctuation).
+	const cutPatterns: RegExp[] = [
+		/(?:^|\n|\.\s*)(Zapatas aisladas|Viga(?:s)? de atado|Vigas centradoras|Pozos cimentac[^\n]*|Planta vivienda|Perímetro edificación|Zanjas cimentaci[^\n]*|Pozos cimentaci[^\n]*|Muro perimetral|Zapata muro|Descuentos|Relleno trasdós|forjado caviti|Hormigón limpieza[^\n]*)\b/i,
+		/(?:^|\n|\s)(P\d+\s*,\s*P\d+)/i, // "P1, P2..."
+		/\n\s*([A-Z](?:\.[A-Z0-9]+)+)\b/, // "C.1.1", "VC.T-1" style codes on their own line
+		/\b(UDS\s+LONGITUD\s+ANCHURA\s+ALTURA)\b/i,
+		/\b(PARCIALES)\b/i,
+		// Dimension-like rows glued after prose: "P1, P2 ... 5 1,00 1,00 0,50"
+		/(?:^|\s)((?:P\d+(?:\s*,\s*P\d+)*)\s+\d+(?:[.,]\d+)?\s+\d+(?:[.,]\d+)?\s+\d+(?:[.,]\d+)?)/i,
+		// Short label line immediately followed by a dimension/partial row
+		/\n([^\n]{2,60})\n\s*(?:\d+\s+)?\d+[.,]\d+\s+\d+[.,]\d+/
+	];
+
+	let cutAt = -1;
+	for (const pattern of cutPatterns) {
+		const match = pattern.exec(normalized);
+		if (!match) continue;
+		const contentStart =
+			match[1] != null ? match.index + match[0].lastIndexOf(match[1]) : match.index;
+		if (cutAt < 0 || contentStart < cutAt) {
+			cutAt = contentStart;
+		}
+	}
+
+	let cleaned = cutAt >= 0 ? normalized.slice(0, cutAt) : normalized;
+
+	// Clean hyphenation artifacts from PDF line wraps: "auxi- liares" → "auxiliares"
+	cleaned = cleaned
+		.replace(/(\p{L})-\s+(\p{L})/gu, '$1$2')
+		.replace(/[ \t]+/g, ' ')
+		.replace(/\n{2,}/g, '\n')
+		.trim();
+
+	return cleaned || description.trim();
+}
+
 async function processChunkWithGemini(
 	text: string,
 	apiKey: string,
@@ -203,17 +249,30 @@ async function processChunkWithGemini(
 	});
 
 	const prompt = `
-Extract budget items from this construction budget PDF text chunk ${chunkIndex + 1}. Extract both line items and category separators:
+Extract budget items from this Spanish construction budget / MEDICIONES PDF text chunk ${chunkIndex + 1}.
+Extract both line items (partidas) and category separators (capítulos).
 
-For LINE ITEMS, identify:
-- lineId: Any item number from PDF (like "1.1", "A.01", "001", etc.) or null if none
-- description: Full text describing the work/item  
-- quantity: Numeric value (default 1 if unclear)
-- unit: Unit like "m²", "ml", "ud", "h", etc. (default "ud" if unclear)
-- unitPrice: Price per unit in euros (default 0 if unclear)  
-- total: Total cost in euros (default 0 if unclear)
+CRITICAL — Spanish MEDICIONES layout for each partida is usually:
+1) Code + unit + short title (resumen)
+2) Long work DESCRIPTION paragraph(s)
+3) MEASUREMENT BREAKDOWN tables (labels + UDS / LONGITUD / ANCHURA / ALTURA / PARCIALES rows)
+4) Final CANTIDAD (and sometimes price/total)
 
-For SEPARATORS (category headers, section titles), identify:
+For LINE ITEMS:
+- lineId: Item code from PDF (like "CA1.03", "1.1", "A.01") or null if none
+- description: ONLY the work description text (the paragraph that explains the work).
+  Optionally include the short resumen title if it adds meaning.
+  DO NOT include measurement breakdown content. Never put any of this in description:
+  - Subtitles like "Zapatas aisladas", "Viga de atado", "Planta vivienda", "Pozos cimentac..."
+  - Location/element labels like "P1, P2, P3...", "C.1.1", "C.F.1", "VC.T-1"
+  - Dimension/partial rows (numbers for uds, longitud, anchura, altura, parciales)
+  - Header/footer noise (CÓDIGO, RESUMEN, UDS LONGITUD ANCHURA ALTURA, Página N, dates)
+- quantity: The FINAL quantity (CANTIDAD) for the partida, NOT partial measurement rows
+- unit: Unit like "m²", "m³", "ml", "ud", "h", etc. (default "ud" if unclear)
+- unitPrice: Price per unit in euros (default 0 if unclear; often absent in pure mediciones)
+- total: Total cost in euros (default 0 if unclear; often absent in pure mediciones)
+
+For SEPARATORS (category headers, section titles like "CAPÍTULO CA01..."):
 - description: The header/category text
 - Set all other fields to null/0
 
@@ -230,13 +289,13 @@ Return JSON in this exact format:
       "total": 0
     },
     {
-      "type": "line", 
-      "lineId": "1.1",
-      "description": "Line item description",
-      "quantity": 5,
-      "unit": "m²",
-      "unitPrice": 25.50,
-      "total": 127.50
+      "type": "line",
+      "lineId": "CA1.03",
+      "description": "Only the work description paragraph, without measurement tables",
+      "quantity": 53.49,
+      "unit": "m³",
+      "unitPrice": 0,
+      "total": 0
     }
   ]
 }
@@ -322,13 +381,16 @@ export async function processWithGemini(
 		onProgress?.(`Organizing ${allItems.length} budget items...`);
 		
 		// Convert to our format with chunked descriptions
-		const items: BudgetItem[] = allItems.map((item: any, index: number) => {
-			const chunks = chunkDescription(item.description || 'No description', maxChunkLength);
+		const items: BudgetItem[] = allItems.map((item: any) => {
+			const rawDescription = item.description || 'No description';
+			const description =
+				item.type === 'separator' ? rawDescription : stripMeasurementDetails(rawDescription);
+			const chunks = chunkDescription(description, maxChunkLength);
 			return {
 				id: crypto.randomUUID(),
 				type: item.type || 'line',
 				lineId: item.lineId || null,
-				description: item.description || 'No description',
+				description,
 				chunks,
 				quantity: item.type === 'separator' ? undefined : (Number(item.quantity) || 1),
 				unit: item.type === 'separator' ? undefined : (item.unit || 'ud'),

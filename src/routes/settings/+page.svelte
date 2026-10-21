@@ -9,14 +9,14 @@
 
 	// Fallback models list in case API call fails
 	const FALLBACK_MODELS: GeminiModel[] = [
-		{ name: 'gemini-1.5-flash', displayName: 'Gemini 1.5 Flash' },
-		{ name: 'gemini-1.5-flash-8b', displayName: 'Gemini 1.5 Flash-8B' },
-		{ name: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' },
-		{ name: 'gemini-2.0-flash-exp', displayName: 'Gemini 2.0 Flash (Experimental)' }
+		{ name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
+		{ name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
+		{ name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash' },
+		{ name: 'gemini-flash-latest', displayName: 'Gemini Flash (Latest)' }
 	];
 
 	let apiKey = '';
-	let geminiModel = 'gemini-1.5-flash';
+	let geminiModel = 'gemini-2.5-flash';
 	let maxChunkLength = 256;
 	let tokenCostPer1k = 0.00015;
 	let showSaved = false;
